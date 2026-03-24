@@ -1,6 +1,8 @@
 # main.py
 import base64
+import imghdr
 import os
+import uvicorn
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
@@ -37,6 +39,15 @@ async def extract_text(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded image is empty")
+
+    if imghdr.what(None, contents) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or corrupted image data",
+        )
+
     b64_image = base64.b64encode(contents).decode("utf-8")
 
     try:
@@ -68,4 +79,11 @@ async def extract_text(file: UploadFile = File(...)):
         return {"message": extracted, "filename": file.filename}
 
     except Exception as e:
+        err_msg = str(e)
+        if "invalid image data" in err_msg.lower():
+            raise HTTPException(status_code=400, detail="Invalid image data")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
