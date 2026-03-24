@@ -1,6 +1,5 @@
 # main.py
 import base64
-import imghdr
 import os
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -28,6 +27,25 @@ app.add_middleware(
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 
+def is_supported_image_bytes(data: bytes) -> bool:
+    # Match common image file signatures without relying on deprecated stdlib modules.
+    signatures = [
+        b"\x89PNG\r\n\x1a\n",  # PNG
+        b"\xff\xd8\xff",  # JPEG
+        b"GIF87a",  # GIF
+        b"GIF89a",  # GIF
+        b"BM",  # BMP
+        b"RIFF",  # WebP starts with RIFF....WEBP
+        b"II*\x00",  # TIFF (little endian)
+        b"MM\x00*",  # TIFF (big endian)
+    ]
+
+    if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+        return True
+
+    return any(data.startswith(sig) for sig in signatures)
+
+
 @app.get("/")
 def health():
     return {"status": "V1.0.0"}
@@ -42,7 +60,7 @@ async def extract_text(file: UploadFile = File(...)):
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded image is empty")
 
-    if imghdr.what(None, contents) is None:
+    if not is_supported_image_bytes(contents):
         raise HTTPException(
             status_code=400,
             detail="Invalid or corrupted image data",
@@ -86,4 +104,5 @@ async def extract_text(file: UploadFile = File(...)):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
